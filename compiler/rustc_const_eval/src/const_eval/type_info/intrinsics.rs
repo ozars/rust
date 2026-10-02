@@ -1,6 +1,7 @@
 use rustc_abi::{FIRST_VARIANT, FieldIdx, VariantIdx};
 use rustc_ast::Mutability;
 use rustc_attr_ir::HasAttrs;
+use rustc_attr_ir::lang_items::LangItem;
 use rustc_middle::mir;
 use rustc_middle::ty::layout::{HasTyCtxt, HasTypingEnv};
 use rustc_middle::ty::{self, FieldInfo, ScalarInt, Ty};
@@ -8,7 +9,7 @@ use rustc_span::{Symbol, span_bug, sym};
 
 use crate::const_eval::CompileTimeMachine;
 use crate::interpret::{
-    CtfeProvenance, Immediate, InterpCx, InterpResult, OpTy, PlaceTy, Scalar,
+    CtfeProvenance, FnVal, Immediate, InterpCx, InterpResult, OpTy, PlaceTy, Scalar,
     ensure_monomorphic_enough, interp_ok, throw_ub, type_implements_dyn_trait,
 };
 
@@ -17,7 +18,7 @@ impl<'tcx> InterpCx<'tcx, CompileTimeMachine<'tcx>> {
     pub(crate) fn call_type_info_intrinsic(
         &mut self,
         intrinsic_name: Symbol,
-        _instance: ty::Instance<'tcx>,
+        instance: ty::Instance<'tcx>,
         args: &[OpTy<'tcx>],
         dest: &PlaceTy<'tcx, CtfeProvenance>,
         target: Option<mir::BasicBlock>,
@@ -200,6 +201,32 @@ impl<'tcx> InterpCx<'tcx, CompileTimeMachine<'tcx>> {
                 let ty = self.read_type_id(&args[0])?;
                 let variants_num = ty.ty_adt_def().map(|def| def.variants().len()).unwrap_or(1);
                 self.write_scalar(Scalar::from_target_usize(variants_num as u64, self), dest)?;
+            }
+
+            sym::type_id_variant_getter => {
+                let ty = self.read_type_id(&args[0])?;
+                let getter_def_id =
+                    self.tcx().require_lang_item(LangItem::VariantGetter, rustc_span::DUMMY_SP);
+                let generic_arg = self.tcx().mk_args(&[ty.into()]);
+                let instance = ty::Instance::expect_resolve(
+                    self.tcx(),
+                    self.typing_env(),
+                    getter_def_id,
+                    generic_arg,
+                    rustc_span::DUMMY_SP,
+                );
+                let fn_ptr = self.fn_ptr(FnVal::Instance(instance));
+                self.write_pointer(fn_ptr, dest)?;
+            }
+
+            sym::type_id_variant_lookup_table => {
+                let ty = instance
+                    .args
+                    .first()
+                    .expect("has one generic")
+                    .as_type()
+                    .expect("the generic arg is a Ty");
+                self.write_slice_of_discriminant(dest, ty)?;
             }
 
             sym::type_id_variant_name => {
