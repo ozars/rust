@@ -6,7 +6,10 @@ fn as_unit_ptr<T: 'static>(test_case: &T) -> *const () {
 
 fn assert_unit_variant_getter<T: 'static>(test_input: &T) {
     let variant_getter = const { TypeId::of::<T>().variant_getter() };
-    assert_eq!(variant_getter(as_unit_ptr(test_input)), const { TypeId::of::<T>().variant(0) });
+    assert_eq!(
+        unsafe { variant_getter(as_unit_ptr(test_input)) },
+        const { TypeId::of::<T>().variant(0) }
+    );
 }
 
 #[test]
@@ -21,15 +24,15 @@ fn correct_variant_id() {
 
     let variant_getter = const { TypeId::of::<Kitty>().variant_getter() };
     assert_eq!(
-        variant_getter(as_unit_ptr(&Kitty::Sleepy)),
+        unsafe { variant_getter(as_unit_ptr(&Kitty::Sleepy)) },
         const { TypeId::of::<Kitty>().variant(0) }
     );
     assert_eq!(
-        variant_getter(as_unit_ptr(&Kitty::Playful)),
+        unsafe { variant_getter(as_unit_ptr(&Kitty::Playful)) },
         const { TypeId::of::<Kitty>().variant(1) }
     );
     assert_eq!(
-        variant_getter(as_unit_ptr(&Kitty::Cuddly)),
+        unsafe { variant_getter(as_unit_ptr(&Kitty::Cuddly)) },
         const { TypeId::of::<Kitty>().variant(2) }
     );
 }
